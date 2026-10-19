@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit vendor | Vendor Bills{% endblock %}
+
+{% block content %}
+    <h1>Edit {{ vendor['name'] }}</h1>
+
+    <form id="vendor-form" method="post" action="{{ url_for('edit_vendor', vendor_id=vendor['id']) }}" novalidate>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="{{ form['email'] }}" required>
+
+        <label for="payment_terms">Payment terms</label>
+        <input id="payment_terms" name="payment_terms" type="text" value="{{ form['payment_terms'] }}" required>
+        <p class="hint">Use lowercase net N, for example net 45.</p>
+
+        <button id="save-vendor" type="submit">Save vendor</button>
+    </form>
+{% endblock %}

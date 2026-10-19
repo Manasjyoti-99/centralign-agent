@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block title %}Bills | Vendor Bills{% endblock %}
+
+{% block content %}
+    <h1>Bills</h1>
+    <p class="hint">Saved invoice records appear below.</p>
+
+    <div class="table-wrap">
+        <table id="bills-table">
+            <thead>
+                <tr>
+                    <th>Vendor</th>
+                    <th>Invoice number</th>
+                    <th>Amount</th>
+                    <th>Due date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bill in bills %}
+                    <tr>
+                        <td>{{ bill['vendor_name'] }}</td>
+                        <td>{{ bill['invoice_number'] }}</td>
+                        <td>{{ '%.2f' | format(bill['amount']) }}</td>
+                        <td>{{ bill['due_date'] }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="4">No bills have been recorded.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}

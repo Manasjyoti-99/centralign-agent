@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}New bill | Vendor Bills{% endblock %}
+
+{% block content %}
+    <h1>New bill</h1>
+
+    <form id="bill-form" method="post" action="{{ url_for('new_bill') }}" novalidate>
+        <label for="vendor_id">Vendor</label>
+        <select id="vendor_id" name="vendor_id" required>
+            <option value="">Select a vendor</option>
+            {% for vendor in vendors %}
+                <option value="{{ vendor['id'] }}" {% if form['vendor_id'] == (vendor['id'] | string) %}selected{% endif %}>{{ vendor['name'] }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="invoice_number">Invoice number</label>
+        <input id="invoice_number" name="invoice_number" type="text" value="{{ form['invoice_number'] }}" required>
+
+        <label for="amount">Amount</label>
+        <input id="amount" name="amount" type="text" inputmode="decimal" value="{{ form['amount'] }}" required>
+
+        <label for="due_date">Due date</label>
+        <input id="due_date" name="due_date" type="text" placeholder="YYYY-MM-DD" value="{{ form['due_date'] }}" required>
+        <p class="hint">Use YYYY-MM-DD, for example 2026-10-20.</p>
+
+        <button id="submit-bill" type="submit">Submit bill</button>
+    </form>
+{% endblock %}

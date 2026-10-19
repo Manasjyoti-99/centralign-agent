@@ -1,0 +1,8 @@
+groq
+flask
+python-dotenv
+pydantic
+playwright
+requests
+pypdf
+reportlab

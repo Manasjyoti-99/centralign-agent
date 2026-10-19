@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Vendor Bills{% endblock %}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, sans-serif; color: #172033; background: #f3f6fa; }
+        header { background: #172b4d; color: white; padding: 20px; }
+        .bar { max-width: 1000px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+        .brand { font-size: 24px; font-weight: bold; }
+        nav { display: flex; gap: 20px; flex-wrap: wrap; }
+        nav a { color: white; text-decoration: none; }
+        nav a:hover { text-decoration: underline; }
+        main { max-width: 1000px; margin: 28px auto; padding: 28px; background: white; border: 1px solid #dde4ee; border-radius: 10px; }
+        h1 { margin-top: 0; font-size: 28px; }
+        a { color: #155ec9; }
+        .hint { color: #536278; line-height: 1.5; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 14px 10px; text-align: left; border-bottom: 1px solid #e1e7ef; }
+        th { background: #edf2f8; }
+        form { max-width: 520px; }
+        label { display: block; margin: 18px 0 7px; font-weight: bold; }
+        input, select { width: 100%; padding: 11px; border: 1px solid #aab8ca; border-radius: 5px; font: inherit; background: white; }
+        button { margin-top: 22px; padding: 12px 22px; border: 0; border-radius: 5px; background: #155ec9; color: white; font: inherit; cursor: pointer; }
+        button:hover { background: #104da6; }
+        input:focus, select:focus, button:focus, a:focus { outline: 3px solid #8bbaff; outline-offset: 2px; }
+        #error, #success { padding: 14px; margin-bottom: 20px; border-radius: 5px; }
+        #error { color: #8a1c1c; background: #fff0f0; border: 1px solid #efb3b3; }
+        #success { color: #12512b; background: #edfbf1; border: 1px solid #a4d8b5; }
+        footer { text-align: center; padding: 0 16px 24px; color: #536278; font-size: 13px; }
+        @media (max-width: 1040px) { main { margin: 20px; } }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="bar">
+            <div class="brand">Vendor Bills</div>
+            <nav aria-label="Main navigation">
+                <a id="nav-bills" href="{{ url_for('bills') }}">Bills</a>
+                <a id="nav-vendors" href="{{ url_for('vendors') }}">Vendors</a>
+                <a id="new-bill" href="{{ url_for('new_bill') }}">New bill</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        {% if error %}
+            <div id="error" role="alert">{{ error }}</div>
+        {% endif %}
+
+        {% if success %}
+            <div id="success" role="status">{{ success }}</div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>Sandbox &middot; Synthetic records only</footer>
+</body>
+</html>
