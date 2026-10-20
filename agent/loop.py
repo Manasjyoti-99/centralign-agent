@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import traceback
 
@@ -13,6 +14,83 @@ from agent.trace import Trace
 from agent.verifier import Verifier
 
 BROWSER_TOOLS = ('open_url', 'get_page', 'fill', 'click')
+
+RECOVERY_NOTE = (
+    'NAVIGATION RECOVERY: Repeated visits added no new page information. '
+    'open_url, get_page and links back to seen pages are temporarily '
+    'unavailable. The current page is already in CURRENT_STATE. Choose '
+    'an available tool to obtain missing evidence or advance the task. '
+    'For local documents use list_files or read_pdf; for an edit use '
+    'the relevant field, button or an unvisited link. Normal approval '
+    'and independent verification still apply. Repetition alone does '
+    'not establish a permanent blocker.'
+)
+
+
+class NavigationRecovery:
+    """Detect revisits, then temporarily limit redundant navigation."""
+
+    def __init__(self):
+        self.pages = set()
+        self.urls = set()
+        self.work_results = set()
+        self.repeats = 0
+
+    @property
+    def active(self):
+        return self.repeats >= 3
+
+    def record(self, name, arguments, result, before, after):
+        if not isinstance(after, dict):
+            return
+        if result.startswith('ERROR') and name != 'finish':
+            return
+
+        links = before.get('links', []) if isinstance(before, dict) else []
+        navigation = name in ('open_url', 'get_page') or (
+            name == 'click' and any(
+                link.get('selector') == arguments.get('selector')
+                for link in links
+            )
+        )
+        if not navigation:
+            work = (name, json.dumps(arguments, sort_keys=True), result)
+            if work not in self.work_results:
+                self.work_results.add(work)
+                self.pages.clear()
+                self.urls.clear()
+                self.repeats = 0
+
+        snapshot = json.dumps(after, sort_keys=True, ensure_ascii=False)
+        self.repeats = self.repeats + 1 if snapshot in self.pages else 0
+        self.pages.add(snapshot)
+        self.urls.add(after['url'])
+
+    def available_tools(self, page):
+        if not self.active or not isinstance(page, dict):
+            return TOOL_DEFINITIONS
+
+        selectors = {
+            item['selector'] for item in page.get('buttons', [])
+            if item.get('selector')
+        }
+        selectors.update(
+            item['selector'] for item in page.get('links', [])
+            if item.get('selector') and item.get('url') not in self.urls
+        )
+        available = []
+        for definition in deepcopy(TOOL_DEFINITIONS):
+            function = definition['function']
+            if function['name'] in ('open_url', 'get_page'):
+                continue
+            if function['name'] == 'click':
+                if not selectors:
+                    continue
+                function['parameters']['properties']['selector']['enum'] = (
+                    sorted(selectors)
+                )
+            available.append(definition)
+        return available
 
 
 def clip(text, limit):
@@ -152,12 +230,19 @@ def run_agent(
         file_lists = {}
         action_log = []
         feedback = ''
+        recovery = NavigationRecovery()
 
         print('Worker model:', llm.model)
         print('Verifier model:', llm.verifier_model)
         print('Trace:', trace.path)
 
         for step in range(1, max_steps + 1):
+            page = current_page(browser)
+            available_tools = recovery.available_tools(page)
+            available_schemas = {
+                item['function']['name']: item['function']['parameters']
+                for item in available_tools
+            }
             context = {
                 'goal': state.goal,
                 'app_url': browser.app_url,
@@ -167,14 +252,20 @@ def run_agent(
                 'file_lists': file_lists,
                 'source_evidence': source_evidence(state),
                 'action_log': action_log[-12:],
-                'page': current_page(browser),
+                'page': page,
                 'feedback': feedback,
+                'navigation_recovery': recovery.active,
             }
 
             messages = [
-                {'role': 'system', 'content': SYSTEM_PROMPT},
+                {
+                    'role': 'system',
+                    'content': SYSTEM_PROMPT + (
+                        '\n\n' + RECOVERY_NOTE if recovery.active else ''
+                    ),
+                },
                 {'role': 'user', 'content': 'Task: ' + state.goal},
-                *recent_messages(exchanges),
+                *(recent_messages(exchanges) if not recovery.active else []),
                 {
                     'role': 'user',
                     'content': 'CURRENT_STATE\n' + json.dumps(
@@ -192,7 +283,7 @@ def run_agent(
             try:
                 response = llm.chat(
                     messages,
-                    tools=TOOL_DEFINITIONS,
+                    tools=available_tools,
                     tool_choice='auto',
                 )
 
@@ -268,6 +359,10 @@ def run_agent(
                 if state.status != 'running':
                     break
 
+                recovery.record(
+                    'finish', {'message': reply, 'completed': True},
+                    result, page, current_page(browser),
+                )
                 feedback = result
                 continue
 
@@ -283,6 +378,11 @@ def run_agent(
 
                 if name not in TOOL_SCHEMAS:
                     raise ValueError(f'Unknown tool: {name}')
+                if name not in available_schemas:
+                    raise ValueError(
+                        f'{name} is temporarily unavailable during '
+                        'navigation recovery. Choose an available tool.'
+                    )
 
                 arguments = json.loads(call.function.arguments)
 
@@ -290,6 +390,14 @@ def run_agent(
                     raise ValueError(
                         'Tool arguments must be a JSON object.'
                     )
+
+                for key, rule in available_schemas[name]['properties'].items():
+                    if 'enum' in rule and arguments.get(key) not in rule['enum']:
+                        raise ValueError(
+                            f'{key} is unavailable during navigation recovery. '
+                            'Choose a currently allowed value: '
+                            + json.dumps(rule['enum'])
+                        )
 
             except (ValueError, TypeError) as error:
                 feedback = f'ERROR: {error}'
@@ -385,6 +493,21 @@ def run_agent(
             # Only independent verification can confirm completion.
             if state.status != 'running':
                 break
+
+            was_active = recovery.active
+            recovery.record(
+                name, arguments, result, page, current_page(browser),
+            )
+            if recovery.active and not was_active:
+                trace.log(
+                    'navigation_recovery', step=step,
+                    repeated_observations=recovery.repeats,
+                )
+                print(
+                    '[loop] Repeated navigation detected; '
+                    'temporarily limiting navigation choices.'
+                )
+                exchanges.clear()
 
         else:
             state.status = 'failed'

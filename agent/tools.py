@@ -1,6 +1,9 @@
 from datetime import date as calendar_date, timedelta
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
+import re
+from urllib.parse import urlsplit
 
 from pypdf import PdfReader
 
@@ -166,6 +169,183 @@ def read_pdf_document(path):
     }
 
 
+DATE_TOKEN = r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]+\s+\d{4})'
+
+
+def source_value(text, label):
+    """Read a labelled value in the supplied synthetic invoice layout."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for index, line in enumerate(lines):
+        key, separator, value = line.partition(':')
+        if key.strip().casefold() == label.casefold():
+            if separator and value.strip():
+                return value.strip()
+            if index + 1 < len(lines):
+                return lines[index + 1]
+    return None
+
+
+def normalise_date(value):
+    value = value.strip()
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+        return calendar_date.fromisoformat(value).isoformat()
+    match = re.fullmatch(r'(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})', value)
+    months = (
+        'january', 'february', 'march', 'april', 'may', 'june',
+        'july', 'august', 'september', 'october', 'november', 'december',
+    )
+    if match and match[2].casefold() in months:
+        return calendar_date(
+            int(match[3]), months.index(match[2].casefold()) + 1,
+            int(match[1]),
+        ).isoformat()
+    raise ValueError('Use an unambiguous date: YYYY-MM-DD or day Month year.')
+
+
+def money_value(value):
+    try:
+        amount = Decimal(str(value).strip().replace(',', ''))
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError('Amount must be positive and finite.')
+        rounded = amount.quantize(Decimal('0.01'))
+        if amount != rounded:
+            raise ValueError('This invoice check supports at most two decimal places.')
+        return format(rounded, 'f')
+    except InvalidOperation as error:
+        raise ValueError('Amount is not a readable decimal number.') from error
+
+
+def expected_bill_values(number, documents, human_answers, goal):
+    """Derive expectations from originals and actual answers, never a claim.
+
+    This parser is deliberately limited to our supplied invoice layout.
+    The model still finds documents, chooses actions and handles feedback.
+    """
+    sources = [document for document in documents
+               if source_value(document['text'], 'Invoice number') == number]
+    if len(sources) != 1:
+        raise ValueError(
+            f'Read one unambiguous original PDF for invoice {number} '
+            'before submitting or verifying it.'
+        )
+    text = sources[0]['text']
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    index = next(i for i, line in enumerate(lines)
+                 if line.partition(':')[0].strip().casefold() == 'invoice number')
+    if index < 1:
+        raise ValueError(f'Cannot read the supplier for invoice {number}.')
+    vendor = lines[index - 1]
+    amount = source_value(text, 'Amount due')
+    if amount is None:
+        raise ValueError(f'Cannot read the amount for invoice {number}.')
+
+    # Explicit task values take priority over document defaults.
+    task_amounts = re.findall(
+        r'\bamount\s*(?:(?:is|of)\s+|[:=]\s*)?'
+        r'([0-9][0-9,]*(?:\.[0-9]+)?)', goal, re.IGNORECASE,
+    )
+    if task_amounts:
+        amounts = {money_value(value) for value in task_amounts}
+        if len(amounts) != 1:
+            raise ValueError('The task contains ambiguous amounts; ask the human.')
+        amount = amounts.pop()
+
+    task_dates = re.findall(
+        r'\bdue(?:[\s_-]+date|\s+on)?\s*'
+        r'(?:(?:is|of)\s+|[:=]\s*)?(' + DATE_TOKEN + r')\b',
+        goal, re.IGNORECASE,
+    )
+    due = None
+    basis = ''
+    if task_dates:
+        dates = {normalise_date(value) for value in task_dates}
+        if len(dates) != 1:
+            raise ValueError('The task contains ambiguous due dates; ask the human.')
+        due, basis = dates.pop(), 'user task'
+
+    known_numbers = {source_value(doc['text'], 'Invoice number')
+                     for doc in documents}
+    for answer in reversed(human_answers):
+        if due is not None:
+            break
+        question = answer.get('question', '')
+        if not re.search(r'\bdue\b', question, re.IGNORECASE):
+            continue
+        named = {item for item in known_numbers if item and re.search(
+            r'(?<!\w)' + re.escape(item) + r'(?!\w)', question,
+            re.IGNORECASE,
+        )}
+        if named and number not in named:
+            continue
+        reply = answer.get('answer', '').strip().rstrip('.')
+        supplied = re.fullmatch(
+            r'(?:(?:use|due|due date)\s*(?:(?:is)\s+|[:=]\s*)?)?('
+            + DATE_TOKEN + r')', reply, re.IGNORECASE,
+        )
+        if supplied is None:
+            raise ValueError(
+                f'Ask the human for one clear due date for invoice {number}. '
+                'Request a reply containing just YYYY-MM-DD.'
+            )
+        due, basis = normalise_date(supplied[1]), 'recorded human answer'
+
+    if due is None:
+        printed = source_value(text, 'Due date')
+        terms = source_value(text, 'Payment terms') or ''
+        net = re.fullmatch(r'net\s+(\d+)', terms, re.IGNORECASE)
+        if printed:
+            due, basis = normalise_date(printed), 'printed due date'
+        elif net:
+            issued = source_value(text, 'Invoice date')
+            if not issued:
+                raise ValueError(f'Cannot read the starting date for invoice {number}.')
+            due = (calendar_date.fromisoformat(normalise_date(issued))
+                   + timedelta(days=int(net[1]))).isoformat()
+            basis = terms
+        else:
+            raise ValueError(
+                f'Invoice {number} has no printed due date or net-N terms. '
+                'Call ask_human for its due date before submitting. '
+                'The invoice date is not evidence for the due date.'
+            )
+
+    return {
+        'vendor': vendor, 'invoice_number': number,
+        'amount': money_value(amount), 'due_date': due,
+        'due_date_basis': basis,
+    }
+
+
+def bill_values_from_fields(fields):
+    fields = {field.get('id'): field for field in fields}
+    vendor = fields.get('vendor_id', {})
+    selected = vendor.get('selected') or []
+    return {
+        'vendor': selected[0] if len(selected) == 1 else vendor.get('value', ''),
+        **{name: fields.get(name, {}).get('value', '').strip()
+           for name in ('invoice_number', 'amount', 'due_date')},
+    }
+
+
+def check_bill_values(values, documents, human_answers, goal):
+    number = values.get('invoice_number', '').strip()
+    if not number:
+        raise ValueError('Fill the invoice number and read its original PDF first.')
+    expected = expected_bill_values(number, documents, human_answers, goal)
+    for key in ('vendor', 'invoice_number', 'amount', 'due_date'):
+        actual = values.get(key, '').strip()
+        if key == 'amount':
+            actual = money_value(actual)
+        if actual != expected[key]:
+            basis = f" ({expected['due_date_basis']})" if key == 'due_date' else ''
+            raise ValueError(
+                f'Invoice {number}: {key} is {actual!r}; '
+                f'expected {expected[key]!r}{basis}. '
+                'Correct the form or saved record before claiming completion.'
+            )
+    return expected
+
+
 class Tools:
     def __init__(
         self,
@@ -224,6 +404,8 @@ class Tools:
         try:
             self._validate(name, arguments)
 
+            self._check_bill_submission(name, arguments)
+
             blocked = self.guard.check(name, arguments)
 
             if blocked is not None:
@@ -250,6 +432,25 @@ class Tools:
         )
 
         return result
+
+    def _check_bill_submission(self, name, arguments):
+        if name != 'click' or self.browser is None:
+            return
+        if urlsplit(self.browser.page.url).path != '/bills/new':
+            return
+        # Inspect the actual element, so alternate selectors cannot skip this.
+        info = self.browser.describe(arguments['selector'])
+        if info.get('id') != 'submit-bill':
+            return
+        values = bill_values_from_fields(self.browser.form_values())
+        self.trace.log('bill_submission_request', observed=values)
+        originals = [read_pdf_document(path) for path in self.state.documents]
+        expected = check_bill_values(
+            values, originals, self.state.human_answers, self.state.goal,
+        )
+        self.trace.log(
+            'bill_preflight', expected=expected, observed=values,
+        )
 
     def _run(self, name, arguments):
         if name == 'list_files':

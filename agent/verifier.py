@@ -4,7 +4,10 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-from agent.tools import DATA_DIR, read_pdf_document, tool
+from agent.tools import (
+    DATA_DIR, check_bill_values, expected_bill_values,
+    read_pdf_document, source_value, tool,
+)
 
 
 VERIFICATION_PROMPT = '''You independently verify an app task from evidence.
@@ -55,66 +58,23 @@ VERDICT_TOOL['function']['parameters']['properties']['outcome']['enum'] = [
 
 
 def missing_date_source(approvals, documents, human_answers, goal):
-    """Reject a missing date basis for submitted bills in this sandbox.
-
-    A human answer still needs semantic checking by the independent judge.
-    This prerequisite does not itself prove that the saved value is right.
-    """
-    if human_answers:
-        return None
-
-    date_pattern = r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]+\s+\d{4})'
+    """Check source availability; actual saved values are checked separately."""
     for approval in approvals:
         if approval.get('approved') is not True:
+            continue
+        if urlsplit(approval.get('url', '')).path != '/bills/new':
             continue
         fields = {
             field.get('id'): field.get('value', '')
             for field in approval.get('fields', [])
         }
         number = fields.get('invoice_number', '').strip()
-        due_date = fields.get('due_date', '').strip()
-        if not number or not due_date:
-            continue
-
-        # A date explicitly supplied for this field by the user is evidence.
-        stated_in_goal = re.search(
-            r'\bdue(?:[\s_-]+date|\s+on)?\s*'
-            r'(?:(?:is|of)\s+|[:=]\s*)?' + date_pattern + r'\b',
-            goal, re.IGNORECASE,
-        )
-        if stated_in_goal:
-            continue
-
-        sources = []
-        for document in documents:
-            match = re.search(
-                r'\bInvoice\s+number\s*:\s*([^\r\n]+)',
-                document['text'], re.IGNORECASE,
+        try:
+            expected_bill_values(
+                number, documents, human_answers, goal,
             )
-            if match and match.group(1).strip() == number:
-                sources.append(document['text'])
-
-        if not sources:
-            return (
-                f'Cannot identify an original document for invoice {number} '
-                'using its labelled invoice number. Read the source or ask '
-                'the human for the required date; do not assume it.'
-            )
-        has_basis = any(
-            re.search(
-                r'\bdue\s+date\s*:\s*' + date_pattern + r'\b',
-                text, re.IGNORECASE,
-            )
-            or re.search(r'\bnet\s+\d+\b', text, re.IGNORECASE)
-            for text in sources
-        )
-        if not has_basis:
-            return (
-                f'Invoice {number} has no printed due date or net-N terms, '
-                'and no human supplied the missing information. '
-                'A different date on the document does not establish its due date. '
-                'Ask the human; an unsupported saved date cannot be verified.'
-            )
+        except ValueError as error:
+            return str(error)
     return None
 
 
@@ -267,6 +227,81 @@ class Verifier:
             method='guard_audit_and_fresh_bills_table',
         )
 
+    def _check_saved_bills(self, documents, pages):
+        """Compare source values with actual table cells in a fresh tab.
+
+        Approval identifies the attempted record; it is not proof of values.
+        This prerequisite can reject, but cannot declare task completion.
+        """
+        numbers = set()
+        for event in self.trace.data['events']:
+            if event['type'] == 'bill_submission_request':
+                number = event['details'].get('observed', {}).get('invoice_number', '')
+                if number.strip():
+                    numbers.add(number.strip())
+        for approval in self.state.approvals:
+            if (approval.get('approved') is True
+                    and urlsplit(approval.get('url', '')).path == '/bills/new'):
+                fields = {field.get('id'): field.get('value', '')
+                          for field in approval.get('fields', [])}
+                if fields.get('invoice_number', '').strip():
+                    numbers.add(fields['invoice_number'].strip())
+        for document in documents:
+            number = source_value(document['text'], 'Invoice number')
+            if number and re.search(
+                r'(?<!\w)' + re.escape(number) + r'(?!\w)',
+                self.state.goal, re.IGNORECASE,
+            ):
+                numbers.add(number)
+        if not numbers:
+            return None
+
+        tab = self.browser.context.new_page()
+        try:
+            response = tab.goto(
+                self.browser.safe_url('/bills'), wait_until='domcontentloaded',
+            )
+            table = tab.locator('#bills-table')
+            if table.count() != 1:
+                raise ValueError('Fresh page has no unique saved Bills table.')
+            cells = table.evaluate('''table => ({
+                headers: [...table.querySelectorAll('thead th')]
+                    .map(cell => cell.innerText.trim()),
+                rows: [...table.querySelectorAll('tbody tr')]
+                    .map(row => [...row.querySelectorAll('td')]
+                        .map(cell => cell.innerText.trim()))
+            })''')
+            snapshot = {
+                'url': tab.url, 'status': response.status if response else None,
+                'text': tab.locator('body').inner_text(), 'fields': [],
+                'table': cells,
+            }
+            pages.append(snapshot)
+            self.trace.log('saved_bill_evidence', page=snapshot)
+            if (snapshot['status'] != 200
+                    or cells['headers'] != ['Vendor', 'Invoice number', 'Amount', 'Due date']
+                    or not cells['rows']
+                    or any(len(row) != 4 for row in cells['rows'])):
+                raise ValueError('Saved Bills table is unreadable or has an unexpected layout.')
+            for number in sorted(numbers):
+                matches = [row for row in cells['rows'] if row[1] == number]
+                if len(matches) != 1:
+                    raise ValueError(f'Expected one saved record for invoice {number}.')
+                vendor, number, amount, due = matches[0]
+                observed = {
+                    'vendor': vendor, 'invoice_number': number,
+                    'amount': amount, 'due_date': due,
+                }
+                expected = check_bill_values(
+                    observed, documents, self.state.human_answers, self.state.goal,
+                )
+                self.trace.log('saved_bill_check', expected=expected, observed=observed)
+        except Exception as error:
+            return f'Saved bill value check failed: {error}'
+        finally:
+            tab.close()
+        return None
+
     def verify(self, message, completed):
         # Save the worker's report for audit, but do not send it to the judge.
         self.trace.log(
@@ -304,6 +339,22 @@ class Verifier:
         except Exception as error:
             return self._reject(f'Cannot read source evidence: {error}')
 
+        if completed:
+            problem = missing_date_source(
+                self.state.approvals, documents,
+                self.state.human_answers, self.state.goal,
+            )
+            if not problem:
+                problem = self._check_saved_bills(documents, pages)
+            if problem:
+                # Retain the actual evidence even when no judge call is needed.
+                self.trace.log('verification_evidence', evidence={
+                    'goal': self.state.goal, 'pages': pages,
+                    'source_documents': documents,
+                    'human_answers': self.state.human_answers,
+                })
+                return self._reject(problem)
+
         action_errors = [
             {
                 'tool': event['details']['tool'],
@@ -339,16 +390,6 @@ class Verifier:
             )
 
         self.trace.log('verification_evidence', evidence=evidence)
-        if completed:
-            problem = missing_date_source(
-                self.state.approvals,
-                documents,
-                self.state.human_answers,
-                self.state.goal,
-            )
-            if problem:
-                return self._reject(problem)
-
         response = self.llm.chat(
             [
                 {'role': 'system', 'content': VERIFICATION_PROMPT},

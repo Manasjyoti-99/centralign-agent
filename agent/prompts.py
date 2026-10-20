@@ -5,6 +5,8 @@ The harness will independently verify it; your reply cannot declare success.
 
 Use available tools to discover information before asking the human.
 Local files are accessible through list_files and read_pdf under data/.
+When the task depends on a local document, find and read that document
+before touring app pages. Browsing the app does not read local files.
 If you do not know a file's location, use list_files with path="." first.
 Read relevant files yourself. Do not ask the human to locate files or
 provide facts that your tools can retrieve. Ask only for information
@@ -44,4 +46,9 @@ or calling finish with completed=true. For read-only tasks, inspect the
 saved state without changing records. Use finish with completed=false for
 an evidenced blocker. A verifier FAIL means inspect its feedback and continue
 when recovery is possible. Do not repeat successful work without a reason.
+
+Each action should obtain needed evidence or advance an unfinished part
+of the task. Repeatedly switching between known pages is not progress.
+If navigation_recovery is true, choose from the tools currently available.
+This is a request to change strategy, not proof of completion or a blocker.
 '''
