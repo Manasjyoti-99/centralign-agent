@@ -3,8 +3,8 @@
 Database outcomes and trace evidence are checked by `evals/run_evals.py`.
 Approval replies and configured human answers are scripted for these sandbox tests.
 
-Latest results: **7/8 tested scenarios passed**; coverage: **8/8**.
-All recorded attempts: **15/23 passed**.
+Latest results: **8/8 tested scenarios passed**; coverage: **8/8**.
+All recorded attempts: **16/24 passed**.
 
 Latest results can span code revisions or models; attempt history is retained below.
 
@@ -15,7 +15,7 @@ Latest results can span code revisions or models; attempt history is retained be
 | flaky_submit | PASS | completed | 11 | 85.8 |
 | duplicate_invoice | PASS | completed | 2 | 11.9 |
 | missing_due_date | PASS | completed | 11 | 105.0 |
-| net_45 | FAIL | failed | 12 | 107.3 |
+| net_45 | PASS | completed | 11 | 75.3 |
 | approval_denied | PASS | not_completed | 9 | 22.0 |
 | vendor_update | PASS | completed | 6 | 16.6 |
 
@@ -49,3 +49,4 @@ Database snapshots and individual checks for every attempt are in `evals/results
 | 2026-10-20T18:02:17.791293+00:00 | missing_due_date | FAIL | openai/gpt-oss-20b / openai/gpt-oss-20b | 456ee96 (dirty) | runs/20261020T180223_726906Z/trace.json | Saved bill has every expected value, Expected bill was created in this run, Missing information was requested before saving |
 | 2026-10-20T19:02:51.417030+00:00 | missing_due_date | PASS | openai/gpt-oss-20b / openai/gpt-oss-20b | 456ee96 (dirty) | runs/20261020T190256_551037Z/trace.json |  |
 | 2026-10-20T19:10:49.924324+00:00 | net_45 | FAIL | openai/gpt-oss-20b / openai/gpt-oss-20b | 456ee96 (dirty) | runs/20261020T191055_383343Z/trace.json | Agent ended with an allowed status, Final independent verification passed |
+| 2026-10-20T19:34:10.223443+00:00 | net_45 | PASS | openai/gpt-oss-120b / openai/gpt-oss-120b | 59d4def | runs/20261020T193415_327211Z/trace.json |  |
