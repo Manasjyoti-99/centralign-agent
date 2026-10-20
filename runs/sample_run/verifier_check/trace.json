@@ -1,0 +1,173 @@
+{
+  "goal": "Verifier smoke check",
+  "model": "openai/gpt-oss-20b",
+  "verifier_model": "openai/gpt-oss-20b",
+  "started_at": "2026-10-20T11:03:52.819487+00:00",
+  "status": "completed",
+  "events": [
+    {
+      "number": 1,
+      "time": "2026-10-20T11:03:54.435610+00:00",
+      "type": "finish_request",
+      "details": {
+        "worker_report": "Worker says the check is complete.",
+        "requested_completed": true
+      }
+    },
+    {
+      "number": 2,
+      "time": "2026-10-20T11:03:54.813765+00:00",
+      "type": "verification_evidence",
+      "details": {
+        "evidence": {
+          "goal": "Check that saved bill GLX-2201 for Globex Logistics has amount 1200.00 and due date 2026-09-30.",
+          "pages": [
+            {
+              "url": "http://localhost:5000/bills",
+              "text": "Vendor Bills\nBills\nVendors\nNew bill\nBills\n\nSaved invoice records appear below.\n\nVendor\tInvoice number\tAmount\tDue date\nGlobex Logistics\tGLX-2201\t1200.00\t2026-09-30\nSandbox · Synthetic records only",
+              "fields": [],
+              "error": "",
+              "status": 200
+            }
+          ],
+          "source_documents": [
+            {
+              "path": "invoices/acme_ACM-1041.pdf",
+              "text": "INVOICE\nACM-1041\nAcme Supplies\nInvoice number:\nACM-1041\nInvoice date:\n2026-08-12\nBill to:\nDemo Company\nDue date:\n2026-09-11\nAmount due\n4,250.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/acme_ACM-1187.pdf",
+              "text": "INVOICE\nACM-1187\nAcme Supplies\nInvoice number:\nACM-1187\nInvoice date:\n20 September 2026\nBill to:\nDemo Company\nDue date:\n20 October 2026\nAmount due\n5,780.50\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/globex_GLX-2201.pdf",
+              "text": "INVOICE\nGLX-2201\nGlobex Logistics\nInvoice number:\nGLX-2201\nInvoice date:\n2026-09-15\nBill to:\nDemo Company\nDue date:\n2026-09-30\nAmount due\n1,200.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/globex_GLX-2305.pdf",
+              "text": "INVOICE\nGLX-2305\nGlobex Logistics\nInvoice number:\nGLX-2305\nInvoice date:\n2026-10-02\nBill to:\nDemo Company\nDue date:\n2026-10-17\nAmount due\n1,920.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/initech_INI-77.pdf",
+              "text": "INVOICE\nINI-77\nInitech Software\nInvoice number:\nINI-77\nInvoice date:\n2026-10-05\nBill to:\nDemo Company\nPayment terms:\nnet 45\nAmount due\n9,000.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/umbrella_UMB-310.pdf",
+              "text": "INVOICE\nUMB-310\nUmbrella Tools\nInvoice number:\nUMB-310\nInvoice date:\n2026-10-09\nBill to:\nDemo Company\nAmount due\n615.75\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            }
+          ],
+          "human_answers": [],
+          "approvals": [],
+          "action_errors": []
+        }
+      }
+    },
+    {
+      "number": 3,
+      "time": "2026-10-20T11:03:55.837622+00:00",
+      "type": "verifier_outcome",
+      "details": {
+        "observed": "completed",
+        "expected": "completed",
+        "reason": "The bills page lists a record for Globex Logistics with invoice number GLX-2201, amount 1200.00, and due date 2026-09-30, matching the goal."
+      }
+    },
+    {
+      "number": 4,
+      "time": "2026-10-20T11:03:55.839901+00:00",
+      "type": "verification",
+      "details": {
+        "verdict": "PASS",
+        "reason": "The bills page lists a record for Globex Logistics with invoice number GLX-2201, amount 1200.00, and due date 2026-09-30, matching the goal.",
+        "method": "model"
+      }
+    },
+    {
+      "number": 5,
+      "time": "2026-10-20T11:03:55.842279+00:00",
+      "type": "finish_request",
+      "details": {
+        "worker_report": "Worker says the check is complete.",
+        "requested_completed": true
+      }
+    },
+    {
+      "number": 6,
+      "time": "2026-10-20T11:03:56.094699+00:00",
+      "type": "verification_evidence",
+      "details": {
+        "evidence": {
+          "goal": "Check that saved bill GLX-2201 for Globex Logistics has amount 9999.00 and due date 2026-09-30.",
+          "pages": [
+            {
+              "url": "http://localhost:5000/bills",
+              "text": "Vendor Bills\nBills\nVendors\nNew bill\nBills\n\nSaved invoice records appear below.\n\nVendor\tInvoice number\tAmount\tDue date\nGlobex Logistics\tGLX-2201\t1200.00\t2026-09-30\nSandbox · Synthetic records only",
+              "fields": [],
+              "error": "",
+              "status": 200
+            }
+          ],
+          "source_documents": [
+            {
+              "path": "invoices/acme_ACM-1041.pdf",
+              "text": "INVOICE\nACM-1041\nAcme Supplies\nInvoice number:\nACM-1041\nInvoice date:\n2026-08-12\nBill to:\nDemo Company\nDue date:\n2026-09-11\nAmount due\n4,250.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/acme_ACM-1187.pdf",
+              "text": "INVOICE\nACM-1187\nAcme Supplies\nInvoice number:\nACM-1187\nInvoice date:\n20 September 2026\nBill to:\nDemo Company\nDue date:\n20 October 2026\nAmount due\n5,780.50\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/globex_GLX-2201.pdf",
+              "text": "INVOICE\nGLX-2201\nGlobex Logistics\nInvoice number:\nGLX-2201\nInvoice date:\n2026-09-15\nBill to:\nDemo Company\nDue date:\n2026-09-30\nAmount due\n1,200.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/globex_GLX-2305.pdf",
+              "text": "INVOICE\nGLX-2305\nGlobex Logistics\nInvoice number:\nGLX-2305\nInvoice date:\n2026-10-02\nBill to:\nDemo Company\nDue date:\n2026-10-17\nAmount due\n1,920.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/initech_INI-77.pdf",
+              "text": "INVOICE\nINI-77\nInitech Software\nInvoice number:\nINI-77\nInvoice date:\n2026-10-05\nBill to:\nDemo Company\nPayment terms:\nnet 45\nAmount due\n9,000.00\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            },
+            {
+              "path": "invoices/umbrella_UMB-310.pdf",
+              "text": "INVOICE\nUMB-310\nUmbrella Tools\nInvoice number:\nUMB-310\nInvoice date:\n2026-10-09\nBill to:\nDemo Company\nAmount due\n615.75\nSYNTHETIC INVOICE - LOCAL DEMO ONLY"
+            }
+          ],
+          "human_answers": [],
+          "approvals": [],
+          "action_errors": []
+        }
+      }
+    },
+    {
+      "number": 7,
+      "time": "2026-10-20T11:03:56.709304+00:00",
+      "type": "verifier_outcome",
+      "details": {
+        "observed": "incomplete",
+        "expected": "completed",
+        "reason": "The saved record for GLX-2201 shows amount 1200.00, not the required 9999.00. No evidence of a blocker. The goal is not satisfied."
+      }
+    },
+    {
+      "number": 8,
+      "time": "2026-10-20T11:03:56.711696+00:00",
+      "type": "verification",
+      "details": {
+        "verdict": "FAIL",
+        "reason": "Observed incomplete; expected completed. The saved record for GLX-2201 shows amount 1200.00, not the required 9999.00. No evidence of a blocker. The goal is not satisfied."
+      }
+    },
+    {
+      "number": 9,
+      "time": "2026-10-20T11:03:56.714793+00:00",
+      "type": "finished",
+      "details": {
+        "status": "completed",
+        "message": "Verifier positive and negative checks passed."
+      }
+    }
+  ],
+  "final_message": "Verifier positive and negative checks passed.",
+  "finished_at": "2026-10-20T11:03:56.714765+00:00"
+}

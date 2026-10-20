@@ -27,6 +27,7 @@ def current_page(browser):
 
     try:
         page = json.loads(browser.get_page())
+
         return {
             'url': page['url'],
             'text': clip(page['text'], 3000),
@@ -45,6 +46,7 @@ def current_page(browser):
             'links': page['links'],
             'error': page['error'],
         }
+
     except Exception as error:
         return f'ERROR: Cannot read the current page: {error}'
 
@@ -193,6 +195,7 @@ def run_agent(
                     tools=TOOL_DEFINITIONS,
                     tool_choice='auto',
                 )
+
             except BadRequestError as error:
                 body = error.body
                 detail = (
@@ -239,7 +242,6 @@ def run_agent(
                     continue
 
                 # The harness requests verification of ordinary text.
-                # We do not invent a model tool call or trust the claim.
                 trace.log(
                     'text_completion_request',
                     step=step,
@@ -344,7 +346,43 @@ def run_agent(
             )
             print(clip(shown_result, 500))
 
-            # Only independent verification changes completion status.
+            # A real denial ends worker execution.
+            if any(
+                item['approved'] is False
+                for item in state.approvals
+            ):
+                trace.log('approval_denied_stop', step=step)
+
+                print(
+                    '[guard] Approval denied; stopping worker and '
+                    'verifying the blocked outcome.'
+                )
+
+                blocked_result = tools.execute(
+                    'finish',
+                    {
+                        'message': (
+                            'Approval was denied. Stop this run and report '
+                            'the blocked outcome without further actions.'
+                        ),
+                        'completed': False,
+                    },
+                )
+
+                trace.screenshot(browser)
+                print(clip(blocked_result, 500))
+
+                if state.status == 'running':
+                    state.status = 'failed'
+                    state.final_message = (
+                        'Approval was denied. The blocked outcome could '
+                        'not be independently verified. '
+                        + clip(blocked_result, 500)
+                    )
+
+                break
+
+            # Only independent verification can confirm completion.
             if state.status != 'running':
                 break
 
