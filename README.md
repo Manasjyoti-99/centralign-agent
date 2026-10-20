@@ -1,5 +1,37 @@
 # CentrAlign Agent — Vendor Bills worker
 
+<!-- checkpoint-status:start -->
+## Current validation status (21 October 2026)
+
+Latest per-scenario results: **8/8 PASS**. All recorded evaluation attempts: **16/24 PASS (66.7%)**.
+
+These development results span different code revisions and models. The latest result for each scenario is reported separately from the complete attempt history. Earlier evaluation figures elsewhere in this README are historical snapshots.
+
+See [evaluation results](evals/results.md) and [individual checks and attempt data](evals/results.json).
+
+### Verification and execution
+
+- Bill submission includes source-backed checks of vendor, invoice number, amount and due date before approval.
+- The independent verifier reloads saved records and compares their values with original documents and relevant human answers before model-based goal verification.
+- Denied bill submissions are checked using the approval audit and fresh saved records.
+- Repeated navigation triggers a temporary restriction on redundant navigation choices.
+
+### Additional evidence
+
+- [Manual tampering trace](runs/sample_run/tamper_check/trace.json): the saved amount was changed to 9999.00; verification rejected it against the invoice amount of 1920.00. The run was subsequently cancelled manually.
+- [Fresh-clone browser screenshot](runs/sample_run/fresh_clone/browser_check.png): installation in a separate virtual environment, database seeding, imports, Flask startup, and Chromium navigation/form filling passed on Windows with Python 3.13. This was a setup smoke check.
+
+### Current limitations
+
+- Source-value validation supports the supplied synthetic invoice layout.
+- The form remains editable during the approval pause. Verification checks the persisted values afterward.
+- The app has no bill-edit workflow or automatic rollback; detecting an incorrect saved record does not repair it.
+- Groq quota limits can interrupt runs. Evaluation history retains these failures.
+- Models used during development: `openai/gpt-oss-120b` and `openai/gpt-oss-20b`, through Groq's hosted API. Model inference requires internet access.
+
+**Demo video:** recording and upload pending.
+<!-- checkpoint-status:end -->
+
 A Python task worker that takes a natural-language request, chooses tools, controls a local browser, and verifies the saved outcome.
 
 The sandbox app and browser run on the laptop. Language-model requests use Groq over the internet.
