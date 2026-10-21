@@ -1,42 +1,50 @@
 # CentrAlign Agent — Vendor Bills worker
 
 <!-- checkpoint-status:start -->
+
 ## Current validation status (21 October 2026)
 
 Latest per-scenario results: **8/8 PASS**. All recorded evaluation attempts: **16/24 PASS (66.7%)**.
 
-These development results span different code revisions and models. The latest result for each scenario is reported separately from the complete attempt history. Earlier evaluation figures elsewhere in this README are historical snapshots.
+These development results span different code revisions and models. The latest result for each scenario is reported separately from the complete attempt history. These are development checkpoints, not a single full-suite run on a frozen final revision.
 
 See [evaluation results](evals/results.md) and [individual checks and attempt data](evals/results.json).
 
 ### Verification and execution
 
 - Bill submission includes source-backed checks of vendor, invoice number, amount and due date before approval.
+
 - The independent verifier reloads saved records and compares their values with original documents and relevant human answers before model-based goal verification.
+
 - Denied bill submissions are checked using the approval audit and fresh saved records.
+
 - Repeated navigation triggers a temporary restriction on redundant navigation choices.
 
 ### Additional evidence
 
 - [Manual tampering trace](runs/sample_run/tamper_check/trace.json): the saved amount was changed to 9999.00; verification rejected it against the invoice amount of 1920.00. The run was subsequently cancelled manually.
+
 - [Fresh-clone browser screenshot](runs/sample_run/fresh_clone/browser_check.png): installation in a separate virtual environment, database seeding, imports, Flask startup, and Chromium navigation/form filling passed on Windows with Python 3.13. This was a setup smoke check.
 
 ### Current limitations
 
 - Source-value validation supports the supplied synthetic invoice layout.
+
 - The form remains editable during the approval pause. Verification checks the persisted values afterward.
+
 - The app has no bill-edit workflow or automatic rollback; detecting an incorrect saved record does not repair it.
+
 - Groq quota limits can interrupt runs. Evaluation history retains these failures.
+
 - Models used during development: `openai/gpt-oss-120b` and `openai/gpt-oss-20b`, through Groq's hosted API. Model inference requires internet access.
 
-**Demo video:** recording and upload pending.
 <!-- checkpoint-status:end -->
 
 A Python task worker that takes a natural-language request, chooses tools, controls a local browser, and verifies the saved outcome.
 
 The sandbox app and browser run on the laptop. Language-model requests use Groq over the internet.
 
-**Demo video:** ADD_VIDEO_LINK
+**Demo video:** [Watch the captioned demonstration](https://youtu.be/Yt18Zs27Rl4)
 
 ## What it does
 
@@ -47,11 +55,17 @@ Example task:
 The worker can:
 
 - Read synthetic invoice PDFs and enter bills through the browser.
+
 - Convert date formats and calculate dates from explicit payment terms.
+
 - Ask the human for missing information.
+
 - Request approval before submitting or saving.
+
 - Recover from app errors, including an injected one-time HTTP 503.
+
 - Check persisted records independently of its own completion claim.
+
 - Save JSON traces and screenshots.
 
 The same worker also updated Acme Supplies' payment terms to `net 45` through the browser, with approval and independent verification. This different task used the existing loop and tools without a task-specific code change.
@@ -71,16 +85,18 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and supply your own Groq API key. The latest approval-denial and vendor-update evaluations used this fallback configuration:
+Edit `.env` and supply your own Groq API key. The recorded demo used the following model configuration:
 
 ```dotenv
 LLM_API_KEY=replace_with_your_groq_api_key
 LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_MODEL=openai/gpt-oss-20b
-VERIFIER_MODEL=openai/gpt-oss-20b
+LLM_MODEL=openai/gpt-oss-120b
+VERIFIER_MODEL=openai/gpt-oss-120b
 APP_URL=http://localhost:5000
 HEADLESS=0
 ```
+
+For the manually selected quota fallback, set both model variables to `openai/gpt-oss-20b`. Results below identify which model each latest evaluation used.
 
 Existing terminal environment variables take precedence over `.env`.
 
@@ -111,7 +127,7 @@ A different task uses the same entry point:
 .\.venv\Scripts\python.exe -m agent.main "Update the payment terms for Acme Supplies to 45 days."
 ```
 
-Chromium opens automatically. Inspect the displayed form values before entering `y` at an approval prompt. Enter or `n` denies approval and ends the run. Answer missing-information questions in the terminal.
+Chromium opens automatically. Inspect the displayed form values before entering `y` at an approval prompt. Pressing Enter without typing `y`, or entering `n`, denies approval and ends the run. Answer missing-information questions in the terminal.
 
 `HEADLESS=1` hides Chromium; terminal approvals still apply.
 
@@ -215,17 +231,17 @@ The grader checks SQLite before and after each run: exact saved values, existing
 
 Latest results: **8/8 tested scenarios passed**, with **8/8 coverage**.
 
-Across all recorded development attempts: **8/12 passed (66.7%)**.
+Across all recorded development attempts at the 21 October checkpoint: **16/24 passed (66.7%)**.
 
 | Scenario | Latest result | Worker model |
 |---|---|---|
-| Globex latest invoice | PASS | `openai/gpt-oss-120b` |
-| Acme date conversion | PASS | `openai/gpt-oss-120b` |
-| Temporary HTTP 503 recovery | PASS | `openai/gpt-oss-120b` |
-| Duplicate left unchanged | PASS | `openai/gpt-oss-120b` |
-| Missing due date → human clarification | PASS after an earlier failure | `openai/gpt-oss-120b` |
+| Globex latest invoice | PASS | `openai/gpt-oss-20b` |
+| Acme date conversion | PASS | `openai/gpt-oss-20b` |
+| Temporary HTTP 503 recovery | PASS | `openai/gpt-oss-20b` |
+| Duplicate left unchanged | PASS | `openai/gpt-oss-20b` |
+| Missing due date → human clarification | PASS | `openai/gpt-oss-20b` |
 | Explicit net-45 calculation | PASS | `openai/gpt-oss-120b` |
-| Approval denied → no bill created | PASS after earlier failures | `openai/gpt-oss-20b` |
+| Approval denied → no bill created | PASS | `openai/gpt-oss-20b` |
 | Vendor payment-term update | PASS | `openai/gpt-oss-20b` |
 
 These outcomes span code revisions and models. They are not a single full-suite run on the final revision or a fixed-version reliability estimate.
@@ -246,38 +262,64 @@ To run the verifier check against the seeded bill:
 
 The latest check accepted saved GLX-2201 amount 1200.00 and rejected an explicit target amount of 9999.00.
 
-This checks an incorrect expected amount against a saved record. A manual form change during an approval pause has not been tested.
+This self-check compares an incorrect expected amount against a saved record. A separate manual tampering test also produced a saved amount of 9999.00 for GLX-2305; source-backed verification rejected it against the PDF amount of 1920.00. That run was then cancelled manually. Detection did not automatically repair or roll back the saved record. See the [manual tampering trace](runs/sample_run/tamper_check/trace.json).
 
 ## Assumptions and known limitations
 
 - This is a narrow prototype using synthetic data and a controlled local app.
+
 - Groq requires internet access and a user-provided API key. Free-tier quotas can prevent completion.
+
 - Provider-requested waits above 60 seconds stop the request rather than hanging indefinitely.
+
 - Development used `openai/gpt-oss-120b`; `openai/gpt-oss-20b` was used as a quota fallback. Results are labeled by model.
+
 - Native text PDFs are supported. Scanned documents need OCR, which is not implemented.
+
 - Documents and evidence have size limits.
+
 - The worker loop is reusable, but selectors, snapshots, the bill date prerequisite, and the denied-bill rule assume this sandbox's structure.
+
 - The model verifier is fallible. Source checks and independent database evaluations reduce errors without proving universal correctness.
+
 - Verification happens after writes and does not roll them back.
+
 - The app has no production authentication, concurrent-user isolation, or accounting/currency precision model.
+
 - Runs have a 25-step limit and no restart/resume support.
+
 - Correct selection of the latest document is not guaranteed on every attempt.
 
 ## Models, APIs, and libraries
 
 - Models: `openai/gpt-oss-120b` and `openai/gpt-oss-20b`, hosted by Groq.
+
 - API client: official `groq` Python SDK with OpenAI-style function-call schemas.
+
 - Browser: Playwright Chromium, synchronous API.
+
 - App: Flask and Python's SQLite module.
+
 - Documents: ReportLab and pypdf.
+
 - Configuration: python-dotenv.
+
 - Full dependencies: `requirements.txt`.
+
 - No LangChain or other agent framework is used.
+
+## AI coding assistance
+
+ChatGPT/Codex assisted with planning, code drafting, debugging, documentation, and demo preparation. The runtime uses the Python modules and libraries listed above; ChatGPT is not part of the running application.
 
 ## What I would build next
 
 1. Repeated full-suite runs on a frozen revision and model.
+
 2. Stronger structured comparisons between original sources and saved records.
+
 3. Approval bound to the exact values submitted.
+
 4. Resumable execution and better recovery from provider limits.
+
 5. OCR and adapters for additional apps, after improving reliability.
