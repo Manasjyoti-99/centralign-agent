@@ -406,7 +406,12 @@ class Tools:
 
             self._check_bill_submission(name, arguments)
 
-            blocked = self.guard.check(name, arguments)
+            blocked = self.guard.check(
+                name, arguments,
+                before_click=lambda: self._check_bill_submission(
+                    name, arguments, phase='before_click',
+                ),
+            )
 
             if blocked is not None:
                 result = blocked
@@ -433,7 +438,7 @@ class Tools:
 
         return result
 
-    def _check_bill_submission(self, name, arguments):
+    def _check_bill_submission(self, name, arguments, phase='before_approval'):
         if name != 'click' or self.browser is None:
             return
         if urlsplit(self.browser.page.url).path != '/bills/new':
@@ -443,13 +448,14 @@ class Tools:
         if info.get('id') != 'submit-bill':
             return
         values = bill_values_from_fields(self.browser.form_values())
-        self.trace.log('bill_submission_request', observed=values)
+        if phase == 'before_approval':
+            self.trace.log('bill_submission_request', observed=values)
         originals = [read_pdf_document(path) for path in self.state.documents]
         expected = check_bill_values(
             values, originals, self.state.human_answers, self.state.goal,
         )
         self.trace.log(
-            'bill_preflight', expected=expected, observed=values,
+            'bill_preflight', phase=phase, expected=expected, observed=values,
         )
 
     def _run(self, name, arguments):

@@ -230,15 +230,11 @@ class Verifier:
     def _check_saved_bills(self, documents, pages):
         """Compare source values with actual table cells in a fresh tab.
 
-        Approval identifies the attempted record; it is not proof of values.
+        Executable approval identifies the record; it is not proof of values.
+        Preflight-rejected requests remain audit evidence, not saved targets.
         This prerequisite can reject, but cannot declare task completion.
         """
         numbers = set()
-        for event in self.trace.data['events']:
-            if event['type'] == 'bill_submission_request':
-                number = event['details'].get('observed', {}).get('invoice_number', '')
-                if number.strip():
-                    numbers.add(number.strip())
         for approval in self.state.approvals:
             if (approval.get('approved') is True
                     and urlsplit(approval.get('url', '')).path == '/bills/new'):

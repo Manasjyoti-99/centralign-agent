@@ -1,45 +1,5 @@
 # CentrAlign Agent — Vendor Bills worker
 
-<!-- checkpoint-status:start -->
-
-## Current validation status (21 October 2026)
-
-Latest per-scenario results: **8/8 PASS**. All recorded evaluation attempts: **16/24 PASS (66.7%)**.
-
-These development results span different code revisions and models. The latest result for each scenario is reported separately from the complete attempt history. These are development checkpoints, not a single full-suite run on a frozen final revision.
-
-See [evaluation results](evals/results.md) and [individual checks and attempt data](evals/results.json).
-
-### Verification and execution
-
-- Bill submission includes source-backed checks of vendor, invoice number, amount and due date before approval.
-
-- The independent verifier reloads saved records and compares their values with original documents and relevant human answers before model-based goal verification.
-
-- Denied bill submissions are checked using the approval audit and fresh saved records.
-
-- Repeated navigation triggers a temporary restriction on redundant navigation choices.
-
-### Additional evidence
-
-- [Manual tampering trace](runs/sample_run/tamper_check/trace.json): the saved amount was changed to 9999.00; verification rejected it against the invoice amount of 1920.00. The run was subsequently cancelled manually.
-
-- [Fresh-clone browser screenshot](runs/sample_run/fresh_clone/browser_check.png): installation in a separate virtual environment, database seeding, imports, Flask startup, and Chromium navigation/form filling passed on Windows with Python 3.13. This was a setup smoke check.
-
-### Current limitations
-
-- Source-value validation supports the supplied synthetic invoice layout.
-
-- The form remains editable during the approval pause. Verification checks the persisted values afterward.
-
-- The app has no bill-edit workflow or automatic rollback; detecting an incorrect saved record does not repair it.
-
-- Groq quota limits can interrupt runs. Evaluation history retains these failures.
-
-- Models used during development: `openai/gpt-oss-120b` and `openai/gpt-oss-20b`, through Groq's hosted API. Model inference requires internet access.
-
-<!-- checkpoint-status:end -->
-
 A Python task worker that takes a natural-language request, chooses tools, controls a local browser, and verifies the saved outcome.
 
 The sandbox app and browser run on the laptop. Language-model requests use Groq over the internet.
@@ -84,6 +44,14 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m playwright install chromium
 Copy-Item .env.example .env
 ```
+
+[constraints-tested.txt](constraints-tested.txt) records the direct dependency versions from the working Windows Python 3.13.9 environment. To select those recorded versions instead of the unpinned defaults, use:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -c constraints-tested.txt
+```
+
+This is a record of tested direct versions, not a complete lockfile of transitive dependencies. The local regression checks below were also run on Python 3.12; the full Windows agent setup was developed on Python 3.13.
 
 Edit `.env` and supply your own Groq API key. The recorded demo used the following model configuration:
 
@@ -163,12 +131,14 @@ flowchart TD
 | `agent/prompts.py` | General instructions for tool use, source grounding, recovery, and verification. |
 | `agent/browser.py` | Chromium control, text snapshots, dropdown selection, origin restrictions, and fresh-page reads. |
 | `agent/tools.py` | Tool schemas, argument validation, restricted file access, PDF extraction, date arithmetic, clarification, and finish requests. |
-| `agent/guard.py` | Human approval before writes and blocking an identical action after three failures. |
+| `agent/guard.py` | Approval tied to the inspected page, action and form values; changed approvals and repeated failures are blocked. |
 | `agent/state.py` | Scratchpad, document evidence, human answers, approvals, and run status. |
 | `agent/verifier.py` | Independent saved-record checks, source grounding, model judgment, and a deterministic denied-bill check. |
 | `agent/trace.py` | JSON event logs, screenshots, final status, and configured-key redaction. |
 | `app/` | Flask sandbox, SQLite database, validation, seeded data, and failure injection. |
 | `evals/` | Scenario definitions, SQLite checks, trace audits, and attempt history. |
+| `tests/` | Local regression tests for approval, source checks and fresh saved-record checks; no model calls. |
+| `constraints-tested.txt` | Recorded direct dependency versions from the working Windows environment. |
 
 ## Design decisions
 
@@ -188,13 +158,15 @@ This reduces prompt size but limits the prototype to interfaces that expose usef
 
 PDF text, file lists, a short action log, human answers, and scratchpad survive between turns. Older tool exchanges are trimmed to reduce repeated reads and context loss.
 
-Runs are limited to 25 worker turns. Network and rate-limit retries are bounded.
+Runs are limited to 25 worker turns. Network and rate-limit retries are bounded. Repeated navigation triggers a temporary restriction on redundant navigation choices.
 
 ### Controls enforced outside the model
 
 File access is restricted to `data/`. Browser navigation is restricted to the configured app origin, and admin routes are blocked.
 
-The guard inspects click targets and asks for approval before write-like actions, including submit/save buttons. Denying approval stops further worker execution.
+The guard inspects click targets and asks for approval before write-like actions, including submit/save buttons. It records the page URL, target action and form values before asking. After `y`, it compares that snapshot with the current page, repeats source validation for a bill, then checks the snapshot again immediately before allowing the click. A change or inspection failure blocks the click and requires fresh approval; it is logged as `approval_invalidated`, not a human denial.
+
+Bill source checks compare vendor, invoice number, amount and due date against original documents and relevant human answers. An explicit denial stops further worker execution and keeps writes blocked for the run.
 
 ### Independent verification
 
@@ -202,9 +174,21 @@ A final text reply or `finish` call requests verification; it does not declare s
 
 For completion checks, the verifier reloads visited URLs in fresh tabs, rereads original PDFs, and makes a separate model call without the worker's final claim. It checks the goal against saved records and source evidence. Verification failure returns feedback to the worker.
 
-An additional source prerequisite rejects bill completion when a required due date has no supported source or human answer.
+An additional source prerequisite rejects bill completion when a required due date has no supported source or human answer. Saved-bill checks use approved record identifiers and identifiers explicitly requested in the goal. A candidate rejected before approval stays in the audit but does not become an extra record that must exist. Approval itself is never proof that a row was saved or has correct values.
 
 For a denied new-bill submission, verification is deterministic: it checks the actual guard event sequence and opens the saved Bills table in a fresh tab to confirm the invoice is absent. This produces `not_completed`, never task completion. Other completion and blocker checks continue through the model verifier.
+
+## Local regression checks
+
+Run from the project folder after installing dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+All **18 local regression tests passed** during the 22 October review. They exercise the real tools, guard, PDF source checks and saved-record verification with in-memory browser stubs. Cases include correcting a rejected invoice typo, changes during approval, source changes during the pause, explicit denial, missing due dates, and incorrect or absent saved records. They need no Flask server, browser installation, API key or model quota beyond the installed Python dependencies.
+
+These local checks cover code behavior. They are separate from the historical browser-and-model evaluations below; no new live model evaluation was performed for the review fixes.
 
 ## Evaluation and results
 
@@ -262,7 +246,9 @@ To run the verifier check against the seeded bill:
 
 The latest check accepted saved GLX-2201 amount 1200.00 and rejected an explicit target amount of 9999.00.
 
-This self-check compares an incorrect expected amount against a saved record. A separate manual tampering test also produced a saved amount of 9999.00 for GLX-2305; source-backed verification rejected it against the PDF amount of 1920.00. That run was then cancelled manually. Detection did not automatically repair or roll back the saved record. See the [manual tampering trace](runs/sample_run/tamper_check/trace.json).
+This self-check compares an incorrect expected amount against a saved record. A separate historical manual tampering test, before the approval snapshot fix, also produced a saved amount of 9999.00 for GLX-2305; source-backed verification rejected it against the PDF amount of 1920.00. That run was then cancelled manually. Detection did not automatically repair or roll back the saved record. See the [manual tampering trace](runs/sample_run/tamper_check/trace.json). Current approval checks stop a changed form before the click; the historical trace is retained unchanged.
+
+The [fresh-clone browser screenshot](runs/sample_run/fresh_clone/browser_check.png) records a Windows setup smoke check: separate virtual environment, database seeding, imports, Flask startup, and Chromium navigation/form filling passed. It was not a complete agent run.
 
 ## Assumptions and known limitations
 
@@ -282,7 +268,9 @@ This self-check compares an incorrect expected amount against a saved record. A 
 
 - The model verifier is fallible. Source checks and independent database evaluations reduce errors without proving universal correctness.
 
-- Verification happens after writes and does not roll them back.
+- The guard checks the current snapshot before the click. It does not atomically bind an outgoing HTTP request against arbitrary page scripts or concurrent changes after the last check.
+
+- Final verification happens after writes and does not roll them back. The app has no bill-edit workflow for automatic correction.
 
 - The app has no production authentication, concurrent-user isolation, or accounting/currency precision model.
 
@@ -304,7 +292,7 @@ This self-check compares an incorrect expected amount against a saved record. A 
 
 - Configuration: python-dotenv.
 
-- Full dependencies: `requirements.txt`.
+- Dependencies: [requirements.txt](requirements.txt); recorded direct versions: [constraints-tested.txt](constraints-tested.txt). The regression tests use Python's standard-library `unittest`, with pypdf for the existing fixtures.
 
 - No LangChain or other agent framework is used.
 
@@ -318,7 +306,7 @@ ChatGPT/Codex assisted with planning, code drafting, debugging, documentation, a
 
 2. Stronger structured comparisons between original sources and saved records.
 
-3. Approval bound to the exact values submitted.
+3. A bill-correction workflow and validation of the outgoing write request.
 
 4. Resumable execution and better recovery from provider limits.
 

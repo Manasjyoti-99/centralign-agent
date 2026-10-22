@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 
 
@@ -21,7 +22,41 @@ class Guard:
             sort_keys=True,
         )
 
-    def check(self, tool_name, arguments):
+    def _click_snapshot(self, selector):
+        """Capture the page, action and values that an approval authorizes."""
+        info = self.browser.describe(selector)
+        if info['tag'] not in ('a', 'button', 'input'):
+            raise ValueError('Click a link or button using its selector.')
+        for key in ('href', 'form_action'):
+            if info[key]:
+                self.browser.safe_url(info[key])
+        return deepcopy({
+            'url': self.browser.page.url,
+            'selector': selector,
+            'element': info,
+            'fields': self.browser.form_values(),
+        })
+
+    def _check_unchanged(self, snapshot):
+        try:
+            current = self._click_snapshot(snapshot['selector'])
+            reason = 'The page, action or form values changed during approval.'
+            if current == snapshot:
+                return None
+        except Exception as error:
+            current = None
+            reason = f'The approved action could not be re-inspected: {error}'
+
+        self.trace.log(
+            'approval_invalidated', approved_snapshot=snapshot,
+            observed_snapshot=current, reason=reason,
+        )
+        return (
+            f'ERROR: Approval invalidated. {reason} No click was executed. '
+            'Review the current page and request fresh approval.'
+        )
+
+    def check(self, tool_name, arguments, before_click=None):
         key = self.action_key(tool_name, arguments)
 
         if self.failures.get(key, 0) >= 3:
@@ -33,18 +68,8 @@ class Guard:
             return None
 
         try:
-            info = self.browser.describe(arguments['selector'])
-
-            if info['tag'] not in ('a', 'button', 'input'):
-                raise ValueError(
-                    'Click a link or button using its selector.'
-                )
-
-            if info['href']:
-                self.browser.safe_url(info['href'])
-
-            if info['form_action']:
-                self.browser.safe_url(info['form_action'])
+            snapshot = self._click_snapshot(arguments['selector'])
+            info = snapshot['element']
 
             label = f"{info['id']} {info['text']}".lower()
 
@@ -65,7 +90,7 @@ class Guard:
                     'Writes remain blocked for this run.'
                 )
 
-            fields = self.browser.form_values()
+            fields = snapshot['fields']
 
         except Exception as error:
             # Inspection failure must block the click.
@@ -82,7 +107,7 @@ class Guard:
         }
 
         print('\nAPPROVAL REQUIRED')
-        print('Page:', self.browser.page.url)
+        print('Page:', snapshot['url'])
         print('Action:', arguments['selector'], info['text'])
         print('Current form values:')
         print(json.dumps(shown, ensure_ascii=False, indent=2))
@@ -95,13 +120,31 @@ class Guard:
         except EOFError:
             approved = False
 
-        decision = {
-            'url': self.browser.page.url,
-            'selector': arguments['selector'],
-            'element': info,
-            'fields': fields,
-            'approved': approved,
-        }
+        decision = {**snapshot, 'approved': approved}
+
+        if approved:
+            blocked = self._check_unchanged(snapshot)
+            if blocked is not None:
+                return blocked
+
+            # The dispatcher owns source validation. Repeat it after the human
+            # pause, then check that validation did not outlive this snapshot.
+            if before_click is not None:
+                try:
+                    before_click()
+                except Exception as error:
+                    self.trace.log(
+                        'approval_invalidated', approved_snapshot=snapshot,
+                        reason=f'Pre-click validation failed: {error}',
+                    )
+                    return (
+                        f'ERROR: Pre-click validation failed: {error}. '
+                        'No click was executed. Correct the values or sources '
+                        'and request fresh approval.'
+                    )
+                blocked = self._check_unchanged(snapshot)
+                if blocked is not None:
+                    return blocked
 
         self.state.approvals.append(decision)
         self.trace.log('approval', **decision)
